@@ -17,16 +17,38 @@ class Database extends Config
     /**
      * Lets you choose which connection group to use if no other is specified.
      */
-    public string $defaultGroup = 'default';
+    public string $defaultGroup = 'satusehat';
 
-    /**
-     * The default database connection.
-     *
-     * @var array<string, mixed>
-     */
-    public array $default = [
+    public array $satusehat = [
         'DSN'          => '',
-        'hostname'     => 'localhost',
+        'hostname'     => '',
+        'username'     => '',
+        'password'     => '',
+        'database'     => '',
+        'DBDriver'     => 'MySQLi',
+        'DBPrefix'     => '',
+        'pConnect'     => false,
+        'DBDebug'      => true,
+        'charset'      => 'utf8mb4',
+        'DBCollat'     => 'utf8mb4_general_ci',
+        'swapPre'      => '',
+        'encrypt'      => false,
+        'compress'     => false,
+        'strictOn'     => false,
+        'failover'     => [],
+        'port'         => 3306,
+        'numberNative' => false,
+        'foundRows'    => false,
+        'dateFormat'   => [
+            'date'     => 'Y-m-d',
+            'datetime' => 'Y-m-d H:i:s',
+            'time'     => 'H:i:s',
+        ],
+    ];
+
+    public array $simklinik = [
+        'DSN'          => '',
+        'hostname'     => '',
         'username'     => '',
         'password'     => '',
         'database'     => '',
@@ -162,33 +184,33 @@ class Database extends Config
      *
      * @var array<string, mixed>
      */
-    public array $tests = [
-        'DSN'         => '',
-        'hostname'    => '127.0.0.1',
-        'username'    => '',
-        'password'    => '',
-        'database'    => ':memory:',
-        'DBDriver'    => 'SQLite3',
-        'DBPrefix'    => 'db_',  // Needed to ensure we're working correctly with prefixes live. DO NOT REMOVE FOR CI DEVS
-        'pConnect'    => false,
-        'DBDebug'     => true,
-        'charset'     => 'utf8',
-        'DBCollat'    => '',
-        'swapPre'     => '',
-        'encrypt'     => false,
-        'compress'    => false,
-        'strictOn'    => true,
-        'failover'    => [],
-        'port'        => 3306,
-        'foreignKeys' => true,
-        'busyTimeout' => 1000,
-        'synchronous' => null,
-        'dateFormat'  => [
-            'date'     => 'Y-m-d',
-            'datetime' => 'Y-m-d H:i:s',
-            'time'     => 'H:i:s',
-        ],
-    ];
+    // public array $tests = [
+    //     'DSN'         => '',
+    //     'hostname'    => '127.0.0.1',
+    //     'username'    => '',
+    //     'password'    => '',
+    //     'database'    => ':memory:',
+    //     'DBDriver'    => 'SQLite3',
+    //     'DBPrefix'    => 'db_',  // Needed to ensure we're working correctly with prefixes live. DO NOT REMOVE FOR CI DEVS
+    //     'pConnect'    => false,
+    //     'DBDebug'     => true,
+    //     'charset'     => 'utf8',
+    //     'DBCollat'    => '',
+    //     'swapPre'     => '',
+    //     'encrypt'     => false,
+    //     'compress'    => false,
+    //     'strictOn'    => true,
+    //     'failover'    => [],
+    //     'port'        => 3306,
+    //     'foreignKeys' => true,
+    //     'busyTimeout' => 1000,
+    //     'synchronous' => null,
+    //     'dateFormat'  => [
+    //         'date'     => 'Y-m-d',
+    //         'datetime' => 'Y-m-d H:i:s',
+    //         'time'     => 'H:i:s',
+    //     ],
+    // ];
 
     public function __construct()
     {
@@ -197,8 +219,16 @@ class Database extends Config
         // Ensure that we always set the database group to 'tests' if
         // we are currently running an automated test suite, so that
         // we don't overwrite live data on accident.
-        if (ENVIRONMENT === 'testing') {
-            $this->defaultGroup = 'tests';
-        }
+        // if (ENVIRONMENT === 'testing') {
+        //     $this->defaultGroup = 'tests';
+        // }
+        $this->satusehat['hostname'] = env('database.satusehat.hostname');
+        $this->satusehat['username'] = env('database.satusehat.username');
+        $this->satusehat['password'] = env('database.satusehat.password');
+        $this->satusehat['database'] = env('database.satusehat.database');
+        $this->simklinik['hostname'] = env('database.simklinik.hostname');
+        $this->simklinik['username'] = env('database.simklinik.username');
+        $this->simklinik['password'] = env('database.simklinik.password');
+        $this->simklinik['database'] = env('database.simklinik.database');
     }
 }
