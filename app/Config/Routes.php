@@ -16,7 +16,7 @@ $routes->put('satusehat-api/proxy', 'SatuSehatApi::proxyPut');
 
 // Satu Sehat Encounter
 $routes->get('satusehat', 'SatuSehat::index');
-$routes->get('encounter/bridge', 'SatuSehatEncounter::bridge');
+$routes->post('send_encounter', 'SatuSehat::send_encounter');
 $routes->get('encounter/(:segment)', 'SatuSehatEncounter::show/$1');
 $routes->post('encounter', 'SatuSehatEncounter::create');
 $routes->put('encounter/(:segment)', 'SatuSehatEncounter::update/$1');
