@@ -8,6 +8,7 @@ use CodeIgniter\API\ResponseTrait;
 use GuzzleHttp\Client;
 use Config\Satusehat;
 use App\Models\M_Main;
+use App\Models\M_Api;
 use Ramsey\Uuid\Uuid;
 
 class SatuSehatApi extends Controller
@@ -16,15 +17,18 @@ class SatuSehatApi extends Controller
     protected Satusehat $config;
     protected ?string $token = null;
     protected $m_main;
+    protected $m_api;
     use ResponseTrait;
 
     public function __construct()
     {
         $this->m_main = new M_Main();
+        $this->m_api = new M_Api();
         $this->config     = config('Satusehat');
         $this->httpClient = new Client([
             'timeout' => 30,
             'verify'  => false,
+            'allow_redirects' => ['strict' => true],
         ]);
     }
 
@@ -43,6 +47,8 @@ class SatuSehatApi extends Controller
             ]);
 
             $body = json_decode($response->getBody()->getContents(), true);
+
+            // dd($body);
 
             if (isset($body['access_token'])) {
                 $this->token = $body['access_token'];
@@ -77,24 +83,40 @@ class SatuSehatApi extends Controller
     /**
      * Fetch and cache token internally for subsequent API calls.
      */
-    protected function fetchToken(): ?string
+    protected function fetchToken(): ?array
     {
+        
         try {
-            $response = $this->httpClient->post("{$this->config->authUrl}/token", [
+            $response = $this->httpClient->post("{$this->config->authUrl}/accesstoken?grant_type=client_credentials", [
+                'headers' => [
+                    'Content-Type' => 'application/x-www-form-urlencoded',
+                    'Accept'       => 'application/json',
+                ],
                 'form_params' => [
-                    'client_id'     => $this->config->clientId,
-                    'client_secret' => $this->config->clientSecret,
-                    'grant_type'    => 'client_credentials',
+                    'client_id'     => trim($this->config->clientId),
+                    'client_secret' => trim($this->config->clientSecret),
                 ],
             ]);
+            
 
-            $body = json_decode($response->getBody()->getContents(), true);
+            $raw = (string) $response->getBody();
+            $body = json_decode($raw, true);
+
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                log_message('error', 'SatuSehat token JSON decode error: ' . json_last_error_msg() . ' | Raw: ' . $raw);
+                return null;
+            }
 
             if (isset($body['access_token'])) {
                 $this->token = $body['access_token'];
-                return $this->token;
+                return [
+                    'access_token' => $body['access_token'],
+                    'expires_in'   => $body['expires_in'] ?? 3600,
+                ];
             }
 
+            log_message('error', 'SatuSehat token response missing access_token: ' . $raw);
             return null;
         } catch (\Throwable $e) {
             log_message('error', 'SatuSehat token fetch failed: ' . $e->getMessage());
@@ -110,7 +132,8 @@ class SatuSehatApi extends Controller
         if ($this->token !== null) {
             return true;
         }
-        return $this->fetchToken() !== null;
+        $result = $this->fetchToken();
+        return $result !== null && isset($result['access_token']);
     }
 
     /**
@@ -257,20 +280,177 @@ class SatuSehatApi extends Controller
         return $this->respond($result);
     }
 
-    public function kirim_data($payload, $namafunc){
+    public function kirim_data($payload, $namafunc, $user_act = null, $kunjungan_id = null){
         $data_token = $this->m_main->get_token();
-        $now = date('d-m-Y H:i:s');
-        $timediff = strtotime($data_token['tgl_act']) - strtotime($now);
+        $now = time();
+        $expired = strtotime($data_token['tgl_act']);
         $token = $data_token['token'];
-        $new_token = $this->getToken();
-        dd($new_token);
-        if($timediff > $now){
-            $new_token = $this->getToken();
-            dd($new_token);
+
+        if (!$token || $expired <= $now) {
+            $new_token = $this->fetchToken();
+            if (!$new_token) {
+                $error = ['kode' => 500, 'pesan' => 'Gagal mengambil token dari Satu Sehat'];
+                $this->m_main->save_log($user_act, $kunjungan_id, $error);
+                return $error;
+            }
+            $token = $new_token['access_token'];
+            $expires_at = $new_token['expires_in'];
+            $this->m_main->save_token($token, $expires_at);
+        }
+
+        try {
+            if ($payload !== null) {
+                // POST request
+                $response = $this->httpClient->post("{$this->config->apiUrl}/{$namafunc}", [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $token,
+                        'Accept'        => 'application/json',
+                        'Content-Type'  => 'application/json',
+                    ],
+                    'json' => $payload,
+                ]);
+            } else {
+                // GET request
+                $response = $this->httpClient->get("{$this->config->apiUrl}/{$namafunc}", [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $token,
+                        'Accept'        => 'application/json',
+                    ],
+                ]);
+            }
+
+            $raw = (string) $response->getBody();
+            $body = json_decode($raw, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $error = ['kode' => 500, 'pesan' => 'JSON decode error', 'raw' => $raw];
+                $this->m_main->save_log($user_act, $kunjungan_id, $error);
+                return $error;
+            }
+
+            // Log if response contains error (e.g. OperationOutcome)
+            if (isset($body['issue']) || isset($body['kode'])) {
+                $this->m_main->save_log($user_act, $kunjungan_id, $body);
+            }
+
+            return $body;
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            $errResponse = $e->hasResponse() ? $e->getResponse() : null;
+            $body = $errResponse ? json_decode((string) $errResponse->getBody(), true) : null;
+            $error = ['kode' => $e->getCode() ?: 500, 'pesan' => $e->getMessage(), 'body' => $body];
+            $this->m_main->save_log($user_act, $kunjungan_id, $error);
+            return $error;
+        } catch (\Throwable $e) {
+            $error = ['kode' => 500, 'pesan' => $e->getMessage()];
+            $this->m_main->save_log($user_act, $kunjungan_id, $error);
+            return $error;
         }
     }
 
-    public function get_pasien_nik($nik){
+    public function get_ihs_pasien($pasien_id){
+        $data_pas = $this->m_main->get_pasien($pasien_id);
 
+        if (!$data_pas) {
+            return ['kode' => 404, 'pesan' => 'Data Pasien Tidak Ditemukan'];
+        }
+
+        // Priority 1: search by NIK
+        if (!empty($data_pas['no_ktp'])) {
+            $nik = trim($data_pas['no_ktp']);
+            $res = $this->kirim_data(null, "Patient?identifier=https://fhir.kemkes.go.id/id/nik|{$nik}");
+
+            if (isset($res['entry'][0]['resource']['id'])) {
+                return $res;
+            }
+        }
+
+        // Priority 2: search by name + birthdate + gender
+        if (!empty($data_pas['nama']) && !empty($data_pas['tgl_lahir']) && !empty($data_pas['sex'])) {
+            $name     = urlencode(trim($data_pas['nama']));
+            $dob      = date('Y-m-d', strtotime($data_pas['tgl_lahir']));
+            $gender   = strtolower(trim($data_pas['sex'])) === 'perempuan' ? 'female' : 'male';
+            
+            $res = $this->kirim_data(null, "Patient?name={$name}&birthdate={$dob}&gender={$gender}");
+
+            if (isset($res['entry'][0]['resource']['id'])) {
+                return $res;
+            }
+        }
+
+        return ['kode' => 404, 'pesan' => 'Data Pasien Tidak Lengkap, Segera lengkapi terlebih dahulu!'];
+    }
+
+    public function get_ihs_dokter($dokter_id){
+        $data_dok = $this->m_main->get_dokter($dokter_id);
+
+        if (!$data_dok) {
+            return ['kode' => 404, 'pesan' => 'Data Dokter Tidak Ditemukan'];
+        }
+
+        if (!empty($data_dok['nik'])) {
+            $nik = trim($data_dok['nik']);
+            $res = $this->kirim_data(null, "Practitioner?identifier=https://fhir.kemkes.go.id/id/nik|{$nik}");
+
+            if (isset($res['entry'][0]['resource']['id'])) {
+                return $res;
+            }
+        }
+
+        return ['kode' => 404, 'pesan' => 'Data Dokter Tidak Lengkap, Segera lengkapi terlebih dahulu!'];
+    }
+
+    public function get_location($location_id){
+        return $this->kirim_data(null, "Location/{$location_id}");
+    }
+
+    public function createLocation(array $data){
+        $payload = [
+            'resourceType' => 'Location',
+            'status'       => $data['status'] ?? 'active',
+            'name'         => $data['name'],
+            'physicalType' => [
+                'coding' => [
+                    [
+                        'system'  => 'http://terminology.hl7.org/CodeSystem/location-physical-type',
+                        'code'    => $data['physical_type_code'] ?? 'ro',
+                        'display' => $data['physical_type_display'] ?? 'room',
+                    ],
+                ],
+            ],
+        ];
+
+        if (!empty($data['identifier'])) {
+            $payload['identifier'] = $data['identifier'];
+        }
+
+        if (!empty($data['description'])) {
+            $payload['description'] = $data['description'];
+        }
+
+        if (!empty($data['telecom'])) {
+            $payload['telecom'] = $data['telecom'];
+        }
+
+        if (!empty($data['address'])) {
+            $payload['address'] = $data['address'];
+        }
+
+        if (!empty($data['managingOrganization'])) {
+            $payload['managingOrganization'] = [
+                'reference' => 'Organization/' . $data['managingOrganization'],
+            ];
+        }
+
+        return $this->kirim_data($payload, 'Location');
+    }
+
+    public function get_organization($org_id = null){
+        if ($org_id) {
+            return $this->kirim_data(null, "Organization/{$org_id}");
+        }
+
+        // Search by name
+        $name = urlencode(trim(func_get_arg(0)));
+        return $this->kirim_data(null, "Organization?name={$name}");
     }
 }
