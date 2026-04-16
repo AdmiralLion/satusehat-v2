@@ -83,6 +83,102 @@ class SatuSehat extends Controller
         }
     }
 
+    public function send_condition(){
+        $input = $this->request->getJSON(true);
+        $payload       = $input['payload'] ?? [];
+        $kunjungan_id  = $input['kunjungan_id'] ?? null;
+        $pelayanan_id  = $input['pelayanan_id'] ?? null;
+        $user_act      = $input['user_act'] ?? null;
+        $encounter_id  = $input['encounter_id'] ?? null;
+        $diagnosa_id   = $input['diagnosa_id'] ?? null;
+        dd($input);
+
+        $result = $this->api->kirim_data($payload, 'Condition', $user_act, $kunjungan_id);
+        if(isset($result['id'])){
+            $this->m_main->save_condition(
+                $result['id'],
+                $user_act,
+                $kunjungan_id,
+                $pelayanan_id,
+                $encounter_id,
+                $diagnosa_id
+            );
+            return $this->respond([
+                'kode'  => 200,
+                'pesan' => 'Data Berhasil Terkirim'
+            ], 200);
+        } else {
+            return $this->respond([
+                'kode'  => 400,
+                'pesan' => $result['body']['issue'][0]['details']['text']
+            ], 404);
+        }
+    }
+
+    public function send_observation(){
+        $input = $this->request->getJSON(true);
+        $payload       = $input['payload'] ?? [];
+        $kunjungan_id  = $input['kunjungan_id'] ?? null;
+        $pelayanan_id  = $input['pelayanan_id'] ?? null;
+        $user_act      = $input['user_act'] ?? null;
+        $encounter_id  = $input['encounter_id'] ?? null;
+        $assesment_id  = $input['assesment_id'] ?? null;
+        $jenis_observation      = $input['jenis_observation'] ?? null;
+
+        $result = $this->api->kirim_data($payload, 'Observation', $user_act, $kunjungan_id);
+        if(isset($result['id'])){
+            $this->m_main->save_observation(
+                $result['id'],
+                $kunjungan_id,
+                $pelayanan_id,
+                $encounter_id,
+                $assesment_id,
+                $jenis_observation
+            );
+            return $this->respond([
+                'kode'  => 200,
+                'pesan' => 'Data Berhasil Terkirim'
+            ], 200);
+        } else {
+            return $this->respond([
+                'kode'  => 400,
+                'pesan' => $result['body']['issue'][0]['details']['text']
+            ], 404);
+        }
+    }
+
+    public function send_procedure(){
+        $input = $this->request->getJSON(true);
+        $payload       = $input['payload'] ?? [];
+        $kunjungan_id  = $input['kunjungan_id'] ?? null;
+        $pelayanan_id  = $input['pelayanan_id'] ?? null;
+        $user_act      = $input['user_act'] ?? null;
+        $encounter_id  = $input['encounter_id'] ?? null;
+        $tindakan_id   = $input['tindakan_id'] ?? null;
+        $nama_tindakan = $input['nama_tindakan'] ?? null;
+
+        $result = $this->api->kirim_data($payload, 'Procedure', $user_act, $kunjungan_id);
+        if(isset($result['id'])){
+            $this->m_main->save_procedure(
+                $result['id'],
+                $kunjungan_id,
+                $pelayanan_id,
+                $encounter_id,
+                $tindakan_id,
+                $nama_tindakan
+            );
+            return $this->respond([
+                'kode'  => 200,
+                'pesan' => 'Data Berhasil Terkirim'
+            ], 200);
+        } else {
+            return $this->respond([
+                'kode'  => 400,
+                'pesan' => $result['body']['issue'][0]['details']['text']
+            ], 404);
+        }
+    }
+
 
     public function show(string $id): ResponseInterface
     {
