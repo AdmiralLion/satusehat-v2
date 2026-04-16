@@ -303,7 +303,8 @@ class SatuSehatApi extends Controller
         try {
             if ($payload !== null) {
                 // POST request
-                $response = $this->httpClient->post("{$this->config->apiUrl}/{$namafunc}", [
+                $url = $namafunc !== '' ? "{$this->config->apiUrl}/{$namafunc}" : $this->config->apiUrl;
+                $response = $this->httpClient->post($url, [
                     'headers' => [
                         'Authorization' => 'Bearer ' . $token,
                         'Accept'        => 'application/json',
@@ -313,7 +314,8 @@ class SatuSehatApi extends Controller
                 ]);
             } else {
                 // GET request
-                $response = $this->httpClient->get("{$this->config->apiUrl}/{$namafunc}", [
+                $url = $namafunc !== '' ? "{$this->config->apiUrl}/{$namafunc}" : $this->config->apiUrl;
+                $response = $this->httpClient->get($url, [
                     'headers' => [
                         'Authorization' => 'Bearer ' . $token,
                         'Accept'        => 'application/json',

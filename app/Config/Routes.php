@@ -18,6 +18,7 @@ $routes->put('satusehat-api/proxy', 'SatuSehatApi::proxyPut');
 
 // Satu Sehat Encounter
 $routes->get('satusehat', 'SatuSehat::index');
+$routes->get('download_data', 'SatuSehat::download_data');
 $routes->post('send_encounter', 'SatuSehat::send_encounter');
 $routes->post('send_condition', 'SatuSehat::send_condition');
 $routes->post('send_observation', 'SatuSehat::send_observation');
