@@ -85,4 +85,43 @@ class M_Main extends Model
             'tgl_act'      => date('Y-m-d H:i:s'),
         ]);
     }
+
+    public function save_condition($satusehat_id,$user_act, $kunjungan_id, $pelayanan_id, $encounter_id, $diagnosa_id)
+    {
+        return $this->db1->table('conditions')->insert([
+            'condition_id' => $satusehat_id,
+            'user_act' => $user_act,
+            'encounter_id' => $encounter_id,
+            'kunjungan_id' => $kunjungan_id,
+            'pelayanan_id' => $pelayanan_id,
+            'diagnosa_id'  => $diagnosa_id,
+            'tgl_create'   => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    public function save_observation($satusehat_id, $kunjungan_id, $pelayanan_id, $encounter_id, $assesment_id, $jenis_observation)
+    {
+        return $this->db1->table('observation')->insert([
+            'observation_id' => $satusehat_id,
+            'encounter_id'   => $encounter_id,
+            'kunjungan_id'   => $kunjungan_id,
+            'pelayanan_id'   => $pelayanan_id,
+            'assesment_id'   => $assesment_id,
+            'jenis_observation'       => $jenis_observation,
+            'tgl_create'     => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    public function save_procedure($satusehat_id, $kunjungan_id, $pelayanan_id, $encounter_id, $tindakan_id, $nama_tindakan)
+    {
+        return $this->db1->table('procedures')->insert([
+            'procedure_id'   => $satusehat_id,
+            'encounter_id'   => $encounter_id,
+            'kunjungan_id'   => $kunjungan_id,
+            'pelayanan_id'   => $pelayanan_id,
+            'tindakan_id'    => $tindakan_id,
+            'nama_tindakan'  => $nama_tindakan,
+            'tgl_create'     => date('Y-m-d H:i:s'),
+        ]);
+    }
 }
