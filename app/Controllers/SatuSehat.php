@@ -33,28 +33,40 @@ class SatuSehat extends Controller
     public function index()
     {  
 
-        $getdata = $this->m_main->cekuser('oni');
-        // $params = [
-        //     'organization' => $this->request->getGet('organization'),
-        //     'patient'      => $this->request->getGet('patient'),
-        //     'practitioner' => $this->request->getGet('practitioner'),
-        //     'status'       => $this->request->getGet('status'),
-        //     'date'         => $this->request->getGet('date'),
-        // ];
-
-        // $params = array_filter($params, fn($v) => $v !== null && $v !== '');
-
-        // $result = $this->api->get('Encounter', $params);
-
-        // return $this->respond($result);
-        // dd($getdata);
-        return $getdata;
+        // $getdata = $this->m_main->cekuser('oni');
+        // return $getdata;
     }
 
-    /**
-     * GET /encounter/{id}
-     * Get a single encounter by Satu Sehat ID.
-     */
+    public function download_data(){
+        $data = $this->m_main->get_kunjungan(date('Y-m-d'));
+        foreach ($data as $i):
+            $diag = $this->m_main->get_diagnosa($i->pelayanan_id);
+            $obs = $this->m_main->get_observasi($i->pelayanan_id);
+            $proc = $this->m_main->get_tindakan($i->pelayanan_id);
+            $this->m_main->save_download(
+                $i->kunjungan_id ?? null,
+                $i->pelayanan_id ?? null,
+                $i->user_act  ?? null,        
+                $i->nama_dokter ?? null,
+                $i->nik_dokter ?? null,
+                $i->nama_px ?? null,               
+                $i->nik_px ?? null,
+                $i->no_rm ?? null,
+                $i->nama_unit ?? null,               
+                $i->ihs_unitid ?? null,
+                $i->tgl_1 ?? null,
+                $i->tgl_2 ?? null,              
+                $i->tgl_3 ?? null,
+                $diag[0]->id ?? null,
+                $obs[0]->nadi ?? null,               
+                $obs[0]->nafas ?? null,
+                $obs[0]->sistole ?? null,
+                $obs[0]->diastole ?? null,                
+                $obs[0]->suhu ?? null,
+                $proc[0]->tindakan ?? null
+            );
+        endforeach;
+    }
 
     public function send_encounter(){
         $input = $this->request->getJSON(true);
