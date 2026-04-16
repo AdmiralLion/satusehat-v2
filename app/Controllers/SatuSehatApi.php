@@ -283,10 +283,12 @@ class SatuSehatApi extends Controller
     public function kirim_data($payload, $namafunc, $user_act = null, $kunjungan_id = null){
         $data_token = $this->m_main->get_token();
         $now = time();
-        $expired = strtotime($data_token['tgl_act']);
+        $tgldb = strtotime($data_token['tgl_act']);
+        $expired = $data_token['expires_in'];
         $token = $data_token['token'];
-
-        if (!$token || $expired <= $now) {
+        $timediff = strtotime(date('Y-m-d H:i:s')) - $tgldb;
+        
+        if (!$token || $expired <= $timediff) {
             $new_token = $this->fetchToken();
             if (!$new_token) {
                 $error = ['kode' => 500, 'pesan' => 'Gagal mengambil token dari Satu Sehat'];
