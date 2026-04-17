@@ -23,6 +23,7 @@ $routes->post('send_encounter', 'SatuSehat::send_encounter');
 $routes->post('send_condition', 'SatuSehat::send_condition');
 $routes->post('send_observation', 'SatuSehat::send_observation');
 $routes->post('send_procedure', 'SatuSehat::send_procedure');
+$routes->match(['get', 'post'], 'send_bundle', 'SatuSehat::send_bundle');
 $routes->get('encounter/(:segment)', 'SatuSehatEncounter::show/$1');
 $routes->post('encounter', 'SatuSehatEncounter::create');
 $routes->put('encounter/(:segment)', 'SatuSehatEncounter::update/$1');

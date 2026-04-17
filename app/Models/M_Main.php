@@ -125,6 +125,33 @@ class M_Main extends Model
         ]);
     }
 
+    public function save_medaction($satusehat_id, $kunjungan_id, $pelayanan_id, $encounter_id, $id_resep, $id_obat)
+    {
+        return $this->db1->table('medication')->insert([
+            'medication_id'   => $satusehat_id,
+            'kunjungan_id'   => $kunjungan_id,
+            'pelayanan_id'   => $pelayanan_id,
+            'encounter_id'   => $encounter_id,
+            'id_resep'    => $id_resep,
+            'id_obat'  => $id_obat,
+            'tgl_create'     => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    public function save_medactionreqdis($satusehat_id,$medication_id, $kunjungan_id, $pelayanan_id, $encounter_id, $id_resep, $id_obat)
+    {
+        return $this->db1->table('medication')->insert([
+            'medicationreqdis_id'   => $satusehat_id,
+            'medication_id'   => $medication_id,
+            'kunjungan_id'   => $kunjungan_id,
+            'pelayanan_id'   => $pelayanan_id,
+            'encounter_id'   => $encounter_id,
+            'id_resep'    => $id_resep,
+            'id_obat'  => $id_obat,
+            'tgl_create'     => date('Y-m-d H:i:s'),
+        ]);
+    }
+
     public function save_download($kunjungan_id, $pelayanan_id, $user_act, $nama_dokter, $nik_dokter, $nama_px, $nik_px, $no_rm, $nama_unit, $ihs_unitid, $tgl_1, $tgl_2, $tgl_3, $diagnosa, $nadi, $nafas, $sistole, $diastole, $suhu, $tindakan)
     {
         return $this->db1->table('get_kunjungan')->insert([
@@ -223,6 +250,15 @@ class M_Main extends Model
         )->getResult();
     }
 
+    public function get_resep($kunjungan_id)
+    {
+        // echo $pelayanan_id;die();
+        return $this->db2->query(
+            "SELECT r.*, o.KODE_KFA93, o.NAMA_OBAT_KFA93 FROM klinik_bersama.resep r JOIN klinik_bersama.ms_obat o ON r.obat_id = o.OBAT_ID WHERE r.kunjungan_id ? AND o.KODE_KFA93 IS NOT NULL",
+            [$kunjungan_id]
+        )->getResult();
+    }
+
     public function is_already_sent($pelayanan_id)
     {
         return $this->db1->table('encounter')
@@ -230,5 +266,33 @@ class M_Main extends Model
             ->countAllResults() > 0;
     }
 
+    // -----------------------------------------------------------------------
+    // Bundle transaction methods
+    // -----------------------------------------------------------------------
+
+    public function get_pending_kunjungan()
+    {
+        return $this->db1->table('get_kunjungan')
+            ->where('status_kirim', 0)
+            ->get()
+            ->getResult();
+    }
+
+    public function update_status_success($pelayanan_id)
+    {
+        return $this->db1->table('get_kunjungan')
+            ->where('pelayanan_id', $pelayanan_id)
+            ->update(['status_kirim' => 1, 'tgl_act' => date('Y-m-d H:i:s')]);
+    }
+
+    public function update_status_failed($pelayanan_id)
+    {
+        return $this->db1->table('get_kunjungan')
+            ->where('pelayanan_id', $pelayanan_id)
+            ->set('status_kirim', 2)
+            ->set('retry_count', 'retry_count + 1', false)
+            ->set('tgl_act', date('Y-m-d H:i:s'))
+            ->update();
+    }
 
 }

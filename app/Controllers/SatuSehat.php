@@ -105,7 +105,6 @@ class SatuSehat extends Controller
         $user_act      = $input['user_act'] ?? null;
         $encounter_id  = $input['encounter_id'] ?? null;
         $diagnosa_id   = $input['diagnosa_id'] ?? null;
-        dd($input);
 
         $result = $this->api->kirim_data($payload, 'Condition', $user_act, $kunjungan_id);
         if(isset($result['id'])){
@@ -193,6 +192,94 @@ class SatuSehat extends Controller
         }
     }
 
+    public function send_medication(?object $row = null, ?string $org_id = null){
+        $input = $this->request->getJSON(true) ?? null;
+        $payload       = $input['payload'] ?? [];
+        $kunjungan_id  = $input['kunjungan_id'] ?? null;
+        $pelayanan_id  = $input['pelayanan_id'] ?? null;
+        $user_act      = $input['user_act'] ?? null;
+        $encounter_id   = $input['encounter_id'] ?? null;
+        $id_resep   = $input['id_resep'] ?? null;
+        $id_obat = $input['id_obat'] ?? null;
+
+        if($input == null){
+            $pending = $this->m_main->get_pending_kunjungan();
+            $ihsPatient = $this->resolveIhsByNik($row->nik_px, 'Patient');
+            $ihsDoctor  = $this->resolveIhsByNik($row->nik_dokter, 'Practitioner');
+
+            // $ihsDoctor = '10009880728'; //ihs_staging
+            // $ihsPatient = 'P02478375538'; //ihs_staging
+            // 2. Get detailed data from SIMRS
+            $obat_detail    = $this->m_main->get_resep($row->kunjungan_id);
+            foreach($obat_detail as $i): //besok finish ini
+                
+            endforeach;
+            $payload = [
+                    'resourceType' => 'Medication',
+                    'meta' => [
+                        'profile' => [
+                            'https://fhir.kemkes.go.id/r4/StructureDefinition/Medication'
+                        ]
+                    ],
+                    'identifier' => [
+                        [
+                            'system' => "http://sys-ids.kemkes.go.id/medication/'$org_id'",
+                            'use' => 'official',
+                            'value' => "{$obat_detail['obat_id']}"
+                        ]
+                    ],
+                    'code' => [
+                        'coding' => [
+                            [
+                                'system' => 'http://sys-ids.kemkes.go.id/kfa',
+                                'code' => "{$obat_detail['KODE_KFA']}",
+                                'display' => "{$obat_detail['NAMA_KFA']}"
+                            ]
+                        ]
+                    ],
+                    'status' => 'active',
+                    'extension' => [
+                        [
+                            'url' => 'https://fhir.kemkes.go.id/r4/StructureDefinition/MedicationType',
+                            'valueCodeableConcept' => [
+                                'coding' => [
+                                    [
+                                        'system' => 'http://terminology.kemkes.go.id/CodeSystem/medication-type',
+                                        'code' => 'NC',
+                                        'display' => 'Non-compound'
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+            ];
+        }
+
+        $result = $this->api->kirim_data($payload, 'Medication', $user_act, $kunjungan_id);
+        if(isset($result['id'])){
+            $this->m_main->save_medication(
+                $result['id'],
+                $kunjungan_id,
+                $pelayanan_id,
+                $encounter_id,
+                $id_resep,
+                $id_obat
+            );
+
+            
+            return $this->respond([
+                'kode'  => 200,
+                'pesan' => 'Data Berhasil Terkirim'
+            ], 200);
+        } else {
+            return $this->respond([
+                'kode'  => 400,
+                'pesan' => $result['body']['issue'][0]['details']['text']
+            ], 404);
+        }
+    }
+
+
 
     public function show(string $id): ResponseInterface
     {
@@ -201,40 +288,7 @@ class SatuSehat extends Controller
         return $this->respond($result);
     }
 
-    /**
-     * POST /encounter
-     * Create a new encounter in Satu Sehat.
-     *
-     * Expected JSON body:
-     * {
-     *   "status": "finished",
-     *   "class_code": "AMB",
-     *   "class_display": "ambulatory",
-     *   "subject_id": "<patient-ihs-id>",
-     *   "subject_display": "<patient-name>",
-     *   "participants": [
-     *     {
-     *       "practitioner_id": "<practitioner-ihs-id>",
-     *       "practitioner_display": "<doctor-name>"
-     *     }
-     *   ],
-     *   "period_start": "2024-01-01T08:00:00+07:00",
-     *   "period_end": "2024-01-01T09:00:00+07:00",
-     *   "diagnoses": [
-     *     {
-     *       "condition_id": "<condition-ihs-id>",
-     *       "condition_display": "<diagnosis-name>",
-     *       "rank": 1,
-     *       "role_code": "CC",
-     *       "role_display": "Chief complaint"
-     *     }
-     *   ],
-     *   "location_id": "<location-ihs-id>",
-     *   "location_display": "<location-name>",
-     *   "reason_code": "<icd10-code>",
-     *   "reason_display": "<reason-text>"
-     * }
-     */
+    
     public function create(): ResponseInterface
     {
         $input = $this->request->getJSON(true);
@@ -276,21 +330,6 @@ class SatuSehat extends Controller
         return $this->respond($result);
     }
 
-    // -----------------------------------------------------------------------
-    // Bridge: push local encounter data to Satu Sehat
-    // -----------------------------------------------------------------------
-
-    /**
-     * POST /encounter/bridge
-     * Bridge local encounter data from simklinik DB to Satu Sehat API.
-     *
-     * Expected JSON body:
-     * {
-     *   "local_encounter_id": 123
-     * }
-     *
-     * Or query parameter: /encounter/bridge?local_id=123
-     */
     public function bridge(): ResponseInterface
     {
         $localId = $this->request->getGet('local_id')
@@ -543,5 +582,596 @@ class SatuSehat extends Controller
             'payload'              => json_encode($response),
             'created_at'           => date('Y-m-d H:i:s'),
         ]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Bundle Transaction (Encounter + Condition + Observation + Procedure)
+    // -----------------------------------------------------------------------
+
+    /**
+     * POST/GET /send_bundle
+     * Sends all pending kunjungan as FHIR Bundle transactions.
+     * Called automatically by cron after download_data().
+     */
+    public function send_bundle()
+    {
+        $org_id  = config('Satusehat')->organizationId;
+        $pending = $this->m_main->get_pending_kunjungan();
+
+        if (empty($pending)) {
+            return $this->respond([
+                'kode'  => 400,
+                'pesan' => 'Tidak ada data yang perlu dikirim',
+            ]);
+        }
+
+        $berhasil = 0;
+        $gagal    = 0;
+        $errors   = [];
+
+        foreach ($pending as $row) {
+            try {
+                $this->processBundle($row, $org_id);
+                $berhasil++;
+            } catch (\RuntimeException $e) {
+                $this->m_main->update_status_failed($row->pelayanan_id);
+                $this->m_main->save_log(null, $row->kunjungan_id, [
+                    'kode' => 400,
+                    'pesan' => $e->getMessage(),
+                ]);
+                $errors[] = [
+                    'pelayanan_id' => $row->pelayanan_id,
+                    'error'        => $e->getMessage(),
+                ];
+                $gagal++;
+            }
+        }
+
+        return $this->respond([
+            'kode'  => 200,
+            'pesan' => "Proses bundle selesai: {$berhasil} berhasil, {$gagal} gagal",
+            'total' => count($pending),
+            'errors' => $errors,
+        ]);
+    }
+
+    public function send_medication_bundle()
+    {
+        $org_id  = config('Satusehat')->organizationId;
+        $pending = $this->m_main->get_pending_kunjungan();
+
+        if (empty($pending)) {
+            return $this->respond([
+                'kode'  => 400,
+                'pesan' => 'Tidak ada data yang perlu dikirim',
+            ]);
+        }
+
+        $berhasil = 0;
+        $gagal    = 0;
+        $errors   = [];
+
+        foreach ($pending as $row) {
+            try {
+                $this->send_medication($row, $org_id);
+                $berhasil++;
+            } catch (\RuntimeException $e) {
+                $this->m_main->update_status_failed_medication($row->pelayanan_id);
+                $this->m_main->save_log(null, $row->kunjungan_id, [
+                    'kode' => 400,
+                    'pesan' => $e->getMessage(),
+                ]);
+                $errors[] = [
+                    'pelayanan_id' => $row->pelayanan_id,
+                    'error'        => $e->getMessage(),
+                ];
+                $gagal++;
+            }
+        }
+
+        return $this->respond([
+            'kode'  => 200,
+            'pesan' => "Proses bundle selesai: {$berhasil} berhasil, {$gagal} gagal",
+            'total' => count($pending),
+            'errors' => $errors,
+        ]);
+    }
+
+    /**
+     * Resolve SatuSehat IHS ID by NIK.
+     */
+    protected function resolveIhsByNik(string $nik, string $resourceType): string
+    {
+        $result = $this->api->kirim_data(
+            null,
+            "{$resourceType}?identifier=https://fhir.kemkes.go.id/id/nik|{$nik}"
+        );
+
+        if (isset($result['entry'][0]['resource']['id'])) {
+            return $result['entry'][0]['resource']['id'];
+        }
+
+        throw new \RuntimeException("IHS ID tidak ditemukan untuk {$resourceType} NIK: {$nik}");
+    }
+
+    /**
+     * Process a single kunjungan record into a FHIR Bundle and send it.
+     */
+    protected function processBundle(object $row, string $org_id): void
+    {
+        // 1. Resolve patient & doctor IHS
+        $ihsPatient = $this->resolveIhsByNik($row->nik_px, 'Patient');
+        $ihsDoctor  = $this->resolveIhsByNik($row->nik_dokter, 'Practitioner');
+
+        // $ihsDoctor = '10009880728'; //ihs_staging
+        // $ihsPatient = 'P02478375538'; //ihs_staging
+        // 2. Get detailed data from SIMRS
+        $diagnoses    = $this->m_main->get_diagnosa($row->pelayanan_id);
+        $observations = $this->m_main->get_observasi($row->pelayanan_id);
+        $procedures   = $this->m_main->get_tindakan($row->pelayanan_id);
+
+        // 3. Resolve observation doctor IHS (fallback to encounter doctor)
+        $ihsDoctorObs = $ihsDoctor;
+        $obsData      = null;
+        if (!empty($observations)) {
+            $obsData = $observations[0];
+            if (!empty($obsData->nik_dokter_obs)) {
+                try {
+                    $ihsDoctorObs = $this->resolveIhsByNik($obsData->nik_dokter_obs, 'Practitioner');
+                } catch (\RuntimeException $e) {
+                    // fallback to encounter doctor
+                }
+            }
+        }
+
+        // 4. Generate UUIDs
+        $uuids = [
+            'encounter' => Uuid::uuid4()->toString(),
+            'nadi'      => Uuid::uuid4()->toString(),
+            'nafas'     => Uuid::uuid4()->toString(),
+            'sistole'   => Uuid::uuid4()->toString(),
+            'diastole'  => Uuid::uuid4()->toString(),
+            'suhu'      => Uuid::uuid4()->toString(),
+        ];
+
+        $conditionUuids = [];
+        foreach ($diagnoses as $i => $diag) {
+            $conditionUuids[$i] = Uuid::uuid4()->toString();
+        }
+
+        $procedureUuids = [];
+        foreach ($procedures as $i => $proc) {
+            $procedureUuids[$i] = Uuid::uuid4()->toString();
+        }
+
+        // 5. Build bundle
+        $bundle = $this->buildBundle($row, $uuids, $conditionUuids, $procedureUuids, [
+            'org_id'        => $org_id,
+            'ihs_patient'   => $ihsPatient,
+            'ihs_doctor'    => $ihsDoctor,
+            'ihs_doctor_obs' => $ihsDoctorObs,
+            'diagnoses'     => $diagnoses,
+            'obsData'       => $obsData,
+            'procedures'    => $procedures,
+            'nadi'          => (int) $row->nadi,
+            'nafas'         => (int) $row->nafas,
+            'sistole'       => (int) $row->sistole,
+            'diastole'      => (int) $row->diastole,
+            'suhu'          => (int) $row->suhu,
+        ]);
+
+        // 6. Send bundle
+        $result = $this->api->kirim_data($bundle, '', null, $row->kunjungan_id);
+
+        // 7. Parse response and save IDs
+        $this->handleBundleResponse($result, $row);
+
+        // 8. Update status
+        $this->m_main->update_status_success($row->pelayanan_id);
+    }
+
+    /**
+     * Build the full FHIR Bundle array.
+     */
+    protected function buildBundle(object $row, array $uuids, array $conditionUuids, array $procedureUuids, array $params): array
+    {
+        $tglKunj      = convertTimeSatset($row->tgl_1);
+        $tglPelayanan = convertTimeSatset($row->tgl_2);
+        $tglPulang    = convertTimeSatset($row->tgl_3);
+        $hariKunj     = hariIndo(date('l', strtotime($row->tgl_1)));
+
+        $entries = [];
+        // --- Encounter Entry ---
+        $encounterDiagnosis = [];
+        foreach ($params['diagnoses'] as $i => $diag) {
+            $rank = min($i + 1, 2);
+            $encounterDiagnosis[] = [
+                'condition' => [
+                    'reference' => "urn:uuid:{$conditionUuids[$i]}",
+                    'display'   => $diag->diagnosis,
+                ],
+                'use' => [
+                    'coding' => [[
+                        'system'  => 'http://terminology.hl7.org/CodeSystem/diagnosis-role',
+                        'code'    => 'DD',
+                        'display' => 'Discharge diagnosis',
+                    ]],
+                ],
+                'rank' => $rank,
+            ];
+        }
+
+       $encounterResource = [
+            'resourceType' => 'Encounter',
+            'status'       => 'finished',
+            'class'        => [
+                'system'  => 'http://terminology.hl7.org/CodeSystem/v3-ActCode',
+                'code'    => 'AMB',
+                'display' => 'ambulatory',
+            ],
+            'subject' => [
+                'reference' => "Patient/{$params['ihs_patient']}",
+                'display'   => $row->nama_px,
+            ],
+            'participant' => [[
+                'type' => [[
+                    'coding' => [[
+                        'system'  => 'http://terminology.hl7.org/CodeSystem/v3-ParticipationType',
+                        'code'    => 'ATND',
+                        'display' => 'attender',
+                    ]],
+                ]],
+                'individual' => [
+                    'reference' => "Practitioner/{$params['ihs_doctor']}",
+                    'display'   => $row->nama_dokter,
+                ],
+            ]],
+            'period' => [
+                'start' => $tglKunj,
+                'end'   => $tglKunj,
+            ],
+            'location' => [[
+                'location' => [
+                    'reference' => "Location/{$row->ihs_unitid}",
+                    'display'   => $row->nama_unit,
+                ],
+            ]],
+            'statusHistory' => [
+                [
+                    'status' => 'arrived',
+                    'period' => ['start' => $tglKunj, 'end' => $tglKunj],
+                ],
+                [
+                    'status' => 'in-progress',
+                    'period' => ['start' => $tglPelayanan, 'end' => $tglPulang],
+                ],
+                [
+                    'status' => 'finished',
+                    'period' => ['start' => $tglPulang, 'end' => $tglPulang],
+                ],
+            ],
+            'serviceProvider' => [
+                'reference' => "Organization/{$params['org_id']}",
+            ],
+            'identifier' => [[
+                'system' => "http://sys-ids.kemkes.go.id/encounter/{$params['org_id']}",
+                'value'  => (string) $row->pelayanan_id,
+            ]],
+        ]; 
+
+        if (!empty($encounterDiagnosis)) {
+            $encounterResource['diagnosis'] = $encounterDiagnosis;
+        }
+
+        $entries[] = [
+            'fullUrl'  => "urn:uuid:{$uuids['encounter']}",
+            'resource' => $encounterResource,
+            'request'  => [
+                'method' => 'POST',
+                'url'    => 'Encounter',
+            ],
+        ];
+
+        // --- Condition Entries ---
+        foreach ($params['diagnoses'] as $i => $diag) {
+            $entries[] = $this->buildConditionEntry($conditionUuids[$i], $uuids['encounter'], $diag, $params, $hariKunj, $tglKunj,$row->nama_px);
+        }
+
+        // --- Observation Entries ---
+        if ($params['obsData']) {
+            $obsEffective = convertTimeSatset($params['obsData']->tgl_soap);
+            $hariObs      = hariIndo(date('l', strtotime($params['obsData']->tgl_soap)));
+
+            $obsParams = [
+                'ihs_patient'    => $params['ihs_patient'],
+                'ihs_doctor_obs' => $params['ihs_doctor_obs'],
+                'uuid_encounter' => $uuids['encounter'],
+                'nama_px'        => $row->nama_px,
+                'hari_obs'       => $hariObs,
+                'tgl_kunj'       => $tglKunj,
+                'effective_date' => $obsEffective,
+                'pelayanan_id'   => $row->pelayanan_id,
+                'org_id'         => $params['org_id'],
+            ];
+
+            if ($params['nadi'] > 0) {
+                $entries[] = $this->buildObservationEntry($uuids['nadi'], 'nadi', $obsParams, $params['nadi']);
+            }
+            if ($params['nafas'] > 0) {
+                $entries[] = $this->buildObservationEntry($uuids['nafas'], 'nafas', $obsParams, $params['nafas']);
+            }
+            if ($params['sistole'] > 0) {
+                $entries[] = $this->buildObservationEntry($uuids['sistole'], 'sistole', $obsParams, $params['sistole']);
+            }
+            if ($params['diastole'] > 0) {
+                $entries[] = $this->buildObservationEntry($uuids['diastole'], 'diastole', $obsParams, $params['diastole']);
+            }
+            if ($params['suhu'] > 0) {
+                $entries[] = $this->buildObservationEntry($uuids['suhu'], 'suhu', $obsParams, $params['suhu']);
+            }
+        }
+
+        // --- Procedure Entries ---
+        foreach ($params['procedures'] as $i => $proc) {
+            if (empty($proc->kode_icd9cm)) {
+                continue;
+            }
+            $entries[] = $this->buildProcedureEntry($procedureUuids[$i], $uuids['encounter'], $proc, $params, $row);
+        }
+
+        return [
+            'resourceType' => 'Bundle',
+            'type'         => 'transaction',
+            'entry'        => $entries,
+        ];
+    }
+
+    /**
+     * Build a single Condition entry for the Bundle.
+     */
+    protected function buildConditionEntry(string $uuid, string $uuidEncounter, object $diag, array $params, string $hariKunj, string $tglKunj, $nama_px): array
+    {
+        return [
+            'fullUrl' => "urn:uuid:{$uuid}",
+            'resource' => [
+                'resourceType' => 'Condition',
+                'clinicalStatus' => [
+                    'coding' => [[
+                        'system'  => 'http://terminology.hl7.org/CodeSystem/condition-clinical',
+                        'code'    => 'active',
+                        'display' => 'Active',
+                    ]],
+                ],
+                'category' => [[
+                    'coding' => [[
+                        'system'  => 'http://terminology.hl7.org/CodeSystem/condition-category',
+                        'code'    => 'encounter-diagnosis',
+                        'display' => 'Encounter Diagnosis',
+                    ]],
+                ]],
+                'code' => [
+                    'coding' => [[
+                        'system'  => 'http://hl7.org/fhir/sid/icd-10',
+                        'code'    => $diag->kode_icd10,
+                        'display' => $diag->diagnosis,
+                    ]],
+                ],
+                'subject' => [
+                    'reference' => "Patient/{$params['ihs_patient']}",
+                    'display'   => $nama_px ?? '',
+                ],
+                'encounter' => [
+                    'reference' => "urn:uuid:{$uuidEncounter}",
+                    'display'   => "Kunjungan di hari {$hariKunj}, {$tglKunj}",
+                ],
+                'identifier' => [[
+                    'system' => "http://sys-ids.kemkes.go.id/condition/{$params['org_id']}",
+                    'value'  => (string) $diag->id,
+                ]],
+            ],
+            'request' => [
+                'method' => 'POST',
+                'url'    => 'Condition',
+            ],
+        ];
+    }
+
+    /**
+     * Build a single Observation entry for the Bundle.
+     */
+    protected function buildObservationEntry(string $uuid, string $type, array $params, int $value): array
+    {
+        $obsConfig = [
+            'nadi' => [
+                'code' => '8867-4', 'display' => 'Heart rate',
+                'unit' => 'beats/minute', 'system' => 'http://unitsofmeasure.org', 'unit_code' => '/min',
+                'label' => 'Denyut Jantung',
+            ],
+            'nafas' => [
+                'code' => '9279-1', 'display' => 'Respiratory rate',
+                'unit' => 'breaths/minute', 'system' => 'http://unitsofmeasure.org', 'unit_code' => '/min',
+                'label' => 'Pernafasan',
+            ],
+            'sistole' => [
+                'code' => '8480-6', 'display' => 'Systolic blood pressure',
+                'unit' => 'mm[Hg]', 'system' => 'http://unitsofmeasure.org', 'unit_code' => 'mm[Hg]',
+                'label' => 'Sistole',
+                'bodySite' => ['coding' => [[
+                    'system' => 'http://snomed.info/sct', 'code' => '368209003', 'display' => 'Right arm',
+                ]]],
+            ],
+            'diastole' => [
+                'code' => '8462-4', 'display' => 'Diastolic blood pressure',
+                'unit' => 'mm[Hg]', 'system' => 'http://unitsofmeasure.org', 'unit_code' => 'mm[Hg]',
+                'label' => 'Diastole',
+                'bodySite' => ['coding' => [[
+                    'system' => 'http://snomed.info/sct', 'code' => '368209003', 'display' => 'Right arm',
+                ]]],
+            ],
+            'suhu' => [
+                'code' => '8310-5', 'display' => 'Body temperature',
+                'unit' => 'C', 'system' => 'http://unitsofmeasure.org', 'unit_code' => 'Cel',
+                'label' => 'Suhu Tubuh',
+            ],
+        ];
+
+        $cfg = $obsConfig[$type];
+
+        $resource = [
+            'resourceType' => 'Observation',
+            'status'       => 'final',
+            'category' => [[
+                'coding' => [[
+                    'system'  => 'http://terminology.hl7.org/CodeSystem/observation-category',
+                    'code'    => 'vital-signs',
+                    'display' => 'Vital Signs',
+                ]],
+            ]],
+            'code' => [
+                'coding' => [[
+                    'system'  => 'http://loinc.org',
+                    'code'    => $cfg['code'],
+                    'display' => $cfg['display'],
+                ]],
+            ],
+            'subject' => [
+                'reference' => "Patient/{$params['ihs_patient']}",
+            ],
+            'performer' => [[
+                'reference' => "Practitioner/{$params['ihs_doctor_obs']}",
+            ]],
+            'encounter' => [
+                'reference' => "urn:uuid:{$params['uuid_encounter']}",
+                'display'   => "Pemeriksaan Fisik {$cfg['label']} {$params['nama_px']} di hari {$params['hari_obs']}, {$params['tgl_kunj']}",
+            ],
+            'effectiveDateTime' => $params['effective_date'],
+            'issued'            => $params['effective_date'],
+            'valueQuantity' => [
+                'value'  => $value,
+                'unit'   => $cfg['unit'],
+                'system' => $cfg['system'],
+                'code'   => $cfg['unit_code'],
+            ],
+            'identifier' => [[
+                'system' => "http://sys-ids.kemkes.go.id/observation/{$params['org_id']}",
+                'value'  => (string) $params['pelayanan_id'],
+            ]],
+        ];
+
+        if (isset($cfg['bodySite'])) {
+            $resource['bodySite'] = $cfg['bodySite'];
+        }
+
+        if ($type === 'suhu') {
+            $interp = getTemperatureInterpretation($value);
+            $resource['interpretation'] = [[
+                'coding' => [[
+                    'system'  => 'http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation',
+                    'code'    => $interp['code'],
+                    'display' => $interp['display'],
+                ]],
+                'text' => $interp['text'],
+            ]];
+        }
+
+        return [
+            'fullUrl'  => "urn:uuid:{$uuid}",
+            'resource' => $resource,
+            'request'  => [
+                'method' => 'POST',
+                'url'    => 'Observation',
+            ],
+        ];
+    }
+
+    /**
+     * Build a single Procedure entry for the Bundle.
+     */
+    protected function buildProcedureEntry(string $uuid, string $uuidEncounter, object $proc, array $params, object $row): array
+    {
+        $tglTindakan = convertTimeSatset($proc->tgl_act);
+        $hari        = hariIndo(date('l', strtotime($proc->tgl_act)));
+
+        return [
+            'fullUrl' => "urn:uuid:{$uuid}",
+            'resource' => [
+                'resourceType' => 'Procedure',
+                'status'       => 'completed',
+                'category'     => [
+                    'coding' => [[
+                        'system'  => 'http://snomed.info/sct',
+                        'code'    => '103693007',
+                        'display' => 'Diagnostic procedure',
+                    ]],
+                    'text' => 'Diagnostic procedure',
+                ],
+                'code' => [
+                    'coding' => [[
+                        'system'  => 'http://hl7.org/fhir/sid/icd-9-cm',
+                        'code'    => $proc->kode_icd9cm,
+                        'display' => $proc->nama_tind,
+                    ]],
+                ],
+                'subject' => [
+                    'reference' => "Patient/{$params['ihs_patient']}",
+                    'display'   => $row->nama_px,
+                ],
+                'encounter' => [
+                    'reference' => "urn:uuid:{$uuidEncounter}",
+                    'display'   => "Tindakan {$proc->nama_tind} {$row->nama_px} pada {$hari}, " . date('d-m-Y', strtotime($proc->tgl_act)),
+                ],
+                'performedPeriod' => [
+                    'start' => $tglTindakan,
+                    'end'   => $tglTindakan,
+                ],
+                'performer' => [[
+                    'actor' => [
+                        'reference' => "Practitioner/{$params['ihs_doctor']}",
+                        'display'   => $row->nama_dokter,
+                    ],
+                ]],
+                'identifier' => [[
+                    'system' => "http://sys-ids.kemkes.go.id/procedure/{$params['org_id']}",
+                    'value'  => (string) $row->pelayanan_id,
+                ]],
+            ],
+            'request' => [
+                'method' => 'POST',
+                'url'    => 'Procedure',
+            ],
+        ];
+    }
+
+    /**
+     * Parse Bundle response from SatuSehat and save resource IDs.
+     */
+    protected function handleBundleResponse(array $response, object $row): void
+    {
+        if (!isset($response['entry'])) {
+            throw new \RuntimeException('Bundle response tidak valid: ' . json_encode($response));
+        }
+
+        $encounter_id = null;
+        $obsCounter   = 0;
+        $obsNames     = ['Denyut Jantung', 'Pernafasan', 'Sistole', 'Diastole', 'Suhu Tubuh'];
+
+        foreach ($response['entry'] as $entry) {
+            $resp         = $entry['response'] ?? [];
+            $resourceType = $resp['resourceType'] ?? '';
+            $resourceId   = $resp['resourceID'] ?? '';
+
+            if ($resourceType === 'Encounter') {
+                $encounter_id = $resourceId;
+                $this->m_main->save_encounter($resourceId, $row->user_act, $row->kunjungan_id, $row->pelayanan_id);
+            } elseif ($resourceType === 'Condition') {
+                $this->m_main->save_condition($resourceId, $row->user_act, $row->kunjungan_id, $row->pelayanan_id, $encounter_id, null);
+            } elseif ($resourceType === 'Observation') {
+                $jenis = $obsNames[$obsCounter] ?? 'Observation';
+                $this->m_main->save_observation($resourceId, $row->kunjungan_id, $row->pelayanan_id, $encounter_id, null, $jenis);
+                $obsCounter++;
+            } elseif ($resourceType === 'Procedure') {
+                $this->m_main->save_procedure($resourceId, $row->kunjungan_id, $row->pelayanan_id, $encounter_id, null, null);
+            }
+        }
     }
 }
