@@ -270,29 +270,43 @@ class M_Main extends Model
     // Bundle transaction methods
     // -----------------------------------------------------------------------
 
-    public function get_pending_kunjungan()
+    public function get_pending_kunjungan(string $statusColumn = 'status_kirim')
     {
         return $this->db1->table('get_kunjungan')
-            ->where('status_kirim', 0)
+            ->where($statusColumn, 0)
             ->get()
             ->getResult();
     }
 
-    public function update_status_success($pelayanan_id)
+    public function update_status_success($pelayanan_id, string $statusColumn = 'status_kirim')
     {
         return $this->db1->table('get_kunjungan')
             ->where('pelayanan_id', $pelayanan_id)
-            ->update(['status_kirim' => 1, 'tgl_act' => date('Y-m-d H:i:s')]);
+            ->update([$statusColumn => 1, 'tgl_act' => date('Y-m-d H:i:s')]);
     }
 
-    public function update_status_failed($pelayanan_id)
+    public function update_status_failed($pelayanan_id, string $statusColumn = 'status_kirim', ?string $retryColumn = 'retry_count')
     {
-        return $this->db1->table('get_kunjungan')
+        $builder = $this->db1->table('get_kunjungan')
             ->where('pelayanan_id', $pelayanan_id)
-            ->set('status_kirim', 2)
-            ->set('retry_count', 'retry_count + 1', false)
-            ->set('tgl_act', date('Y-m-d H:i:s'))
-            ->update();
+            ->set($statusColumn, 2)
+            ->set('tgl_act', date('Y-m-d H:i:s'));
+
+        if (!empty($retryColumn)) {
+            $builder->set($retryColumn, "{$retryColumn} + 1", false);
+        }
+
+        return $builder->update();
+    }
+
+    public function update_status_success_medication($pelayanan_id)
+    {
+        return $this->update_status_success($pelayanan_id, 'status_kirimmed');
+    }
+
+    public function update_status_failed_medication($pelayanan_id)
+    {
+        return $this->update_status_failed($pelayanan_id, 'status_kirimmed', null);
     }
 
 }

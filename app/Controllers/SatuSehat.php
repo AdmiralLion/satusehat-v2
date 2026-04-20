@@ -203,7 +203,7 @@ class SatuSehat extends Controller
         $id_obat = $input['id_obat'] ?? null;
 
         if($input == null){
-            $pending = $this->m_main->get_pending_kunjungan();
+            // $pending = $this->m_main->get_pending_kunjungan();
             $ihsPatient = $this->resolveIhsByNik($row->nik_px, 'Patient');
             $ihsDoctor  = $this->resolveIhsByNik($row->nik_dokter, 'Practitioner');
 
@@ -638,7 +638,7 @@ class SatuSehat extends Controller
     public function send_medication_bundle()
     {
         $org_id  = config('Satusehat')->organizationId;
-        $pending = $this->m_main->get_pending_kunjungan();
+        $pending = $this->m_main->get_pending_kunjungan('status_kirimmed');
 
         if (empty($pending)) {
             return $this->respond([
@@ -653,7 +653,16 @@ class SatuSehat extends Controller
 
         foreach ($pending as $row) {
             try {
-                $this->send_medication($row, $org_id);
+                $result = $this->send_medication($row, $org_id);
+                $isSuccess = method_exists($result, 'getStatusCode')
+                    ? $result->getStatusCode() < 400
+                    : true;
+
+                if (!$isSuccess) {
+                    throw new \RuntimeException('Pengiriman medication bundle gagal.');
+                }
+
+                $this->m_main->update_status_success_medication($row->pelayanan_id);
                 $berhasil++;
             } catch (\RuntimeException $e) {
                 $this->m_main->update_status_failed_medication($row->pelayanan_id);
