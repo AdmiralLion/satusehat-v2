@@ -204,17 +204,25 @@ class SatuSehat extends Controller
 
         if($input == null){
             // $pending = $this->m_main->get_pending_kunjungan();
-            $ihsPatient = $this->resolveIhsByNik($row->nik_px, 'Patient');
-            $ihsDoctor  = $this->resolveIhsByNik($row->nik_dokter, 'Practitioner');
+            // $ihsPatient = $this->resolveIhsByNik($row->nik_px, 'Patient');
+            // $ihsDoctor  = $this->resolveIhsByNik($row->nik_dokter, 'Practitioner');
 
-            // $ihsDoctor = '10009880728'; //ihs_staging
-            // $ihsPatient = 'P02478375538'; //ihs_staging
+            $ihsDoctor = '10009880728'; //ihs_staging
+            $ihsPatient = 'P02478375538'; //ihs_staging
             // 2. Get detailed data from SIMRS
-            $obat_detail    = $this->m_main->get_resep($row->kunjungan_id);
+            $obat_detail    = $this->m_main->get_resep($row->pelayanan_id);
+            $enc_detail = $this->m_main->get_encounter($row->kunjungan_id);
+            $encounter_id = $enc_detail['encounter_id'];
+
             foreach($obat_detail as $i): //besok finish ini
-                
-            endforeach;
-            $payload = [
+                $obat = (array) $i;
+                $idResep = $obat['id'] ?? $id_resep;
+                $idObat = $obat['id_obat'] ?? $obat['obat_id'] ?? $id_obat;
+                $idObat = $idObat + 160;
+                $kodeKfa = $obat['KODE_KFA93'] ?? $obat['KODE_KFA'] ?? '';
+                $namaKfa = $obat['NAMA_OBAT_KFA93'] ?? $obat['NAMA_KFA'] ?? '';
+                $tglKunj = convertTimeSatset($obat['tgl_input_act'] ?? null);
+                $payload = [
                     'resourceType' => 'Medication',
                     'meta' => [
                         'profile' => [
@@ -223,17 +231,17 @@ class SatuSehat extends Controller
                     ],
                     'identifier' => [
                         [
-                            'system' => "http://sys-ids.kemkes.go.id/medication/'$org_id'",
+                            'system' => "http://sys-ids.kemkes.go.id/medication/{$org_id}",
                             'use' => 'official',
-                            'value' => "{$obat_detail['obat_id']}"
+                            'value' => "{$idObat}"
                         ]
                     ],
                     'code' => [
                         'coding' => [
                             [
                                 'system' => 'http://sys-ids.kemkes.go.id/kfa',
-                                'code' => "{$obat_detail['KODE_KFA']}",
-                                'display' => "{$obat_detail['NAMA_KFA']}"
+                                'code' => "{$kodeKfa}",
+                                'display' => "{$namaKfa}"
                             ]
                         ]
                     ],
@@ -253,6 +261,243 @@ class SatuSehat extends Controller
                         ]
                     ]
             ];
+            // dd($payload);
+
+            $result = $this->api->kirim_data($payload, 'Medication', $user_act, $row->kunjungan_id);
+            if(isset($result['id'])){
+                $this->m_main->save_medication(
+                    $result['id'],
+                    $row->kunjungan_id,
+                    $row->pelayanan_id,
+                    $encounter_id,
+                    $idResep,
+                    $idObat
+                );
+            } else {
+                return $this->respond([
+                    'kode'  => 400,
+                    'pesan' => $result['body']['issue'][0]['details']['text']
+                ], 404);
+            }
+            $payload_request = [
+                    "resourceType" => "MedicationRequest",
+                    "identifier" => [
+                        [
+                            "system" => "http://sys-ids.kemkes.go.id/prescription/{$org_id}",
+                            "use" => "official",
+                            "value" => "{$idResep}"
+                        ],
+                        [
+                            "system" => "http://sys-ids.kemkes.go.id/prescription-item/{$org_id}",
+                            "use" => "official",
+                            "value" => "{$idObat}"
+                        ]
+                    ],
+                    "status" => "completed",
+                    "intent" => "order",
+                    "category" => [
+                        [
+                            "coding" => [
+                                [
+                                    "system" => "http://terminology.hl7.org/CodeSystem/medicationrequest-category",
+                                    "code" => "outpatient",
+                                    "display" => "Outpatient"
+                                ]
+                            ]
+                        ]
+                    ],
+                    "priority" => "routine",
+                    "medicationReference" => [
+                        "reference" => "Medication/".$result['id'],
+                        "display" => "$namaKfa"
+                    ],
+                    "subject" => [
+                        "reference" => "Patient/".$ihsPatient,
+                        "display" => "test"
+                    ],
+                    "encounter" => [
+                        "reference" => "Encounter/".$encounter_id
+                    ],
+                    "authoredOn" => "$tglKunj",
+                    "requester" => [
+                        "reference" => "Practitioner/".$ihsDoctor,
+                        "display" => "test"
+                    ],
+                    "dosageInstruction" => [
+                        [
+                            "sequence" => 1,
+                            "timing" => [
+                                "repeat" => [
+                                    "frequency" => 1,
+                                    "period" => 1,
+                                    "periodUnit" => "d"
+                                ]
+                            ],
+                            "route" => [
+                                "coding" => [
+                                    [
+                                        "system" => "http://www.whocc.no/atc",
+                                        "code" => "O",
+                                        "display" => "Oral"
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ],
+                    "dispenseRequest" => [
+                        "quantity" => [
+                            "value" => $obat['jumlah'] ?? 1,
+                            "unit" => "TAB",
+                            "system" => "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm",
+                            "code" => "TAB"
+                        ],
+                        "performer" => [
+                            "reference" => "Organization/{$org_id}"
+                        ]
+                    ]
+                ];
+
+            $result2 = $this->api->kirim_data($payload_request, 'MedicationRequest', $user_act, $kunjungan_id);
+
+            if (isset($result2['id'])) {
+                $this->m_main->save_medicationreqdis(
+                    $result2['id'],
+                    $result['id'],
+                    $kunjungan_id,
+                    $pelayanan_id,
+                    $encounter_id,
+                    $idResep,
+                    $idObat,
+                    'MEDICATION REQUEST'
+                );
+            } else {
+                return $this->respond([
+                    'kode'  => 400,
+                    'pesan' => $result2['body']['issue'][0]['details']['text'] ?? 'MedicationRequest gagal terkirim'
+                ], 404);
+            }
+
+            $getunit = $this->m_main->get_unit_apotek($pelayanan_id) ?? [];
+
+            $payload_dispense = [
+                    "resourceType" => "MedicationDispense",
+                    "identifier" => [
+                        [
+                            "system" => "http://sys-ids.kemkes.go.id/prescription/{$org_id}",
+                            "use" => "official",
+                            "value" => "{$idResep}"
+                        ],
+                        [
+                            "system" => "http://sys-ids.kemkes.go.id/prescription-item/{$org_id}",
+                            "use" => "official",
+                            "value" => "{$idObat}"
+                        ]
+                    ],
+                    "status" => "completed",
+                    "category" => [
+                        "coding" => [
+                            [
+                                "system" => "http://terminology.hl7.org/fhir/CodeSystem/medicationdispense-category",
+                                "code" => "outpatient",
+                                "display" => "Outpatient"
+                            ]
+                        ]
+                    ],
+                    "medicationReference" => [
+                        "reference" => "Medication/". $result['id'],
+                        "display" => "$namaKfa"
+                    ],
+                    "subject" => [
+                        "reference" => "Patient/".$ihsPatient,
+                        "display" => "tes"
+                    ],
+                    "context" => [
+                        "reference" => "Encounter/".$encounter_id
+                    ],
+                    "location" => [
+                        // "reference" => "Location/".($getunit['ihs_id'] ?? ''),
+                        "reference" => "Location/96ab37a1-7cb1-41ef-a944-cef59def2934",
+                        "display" => $getunit['nama'] ?? ''
+                    ],
+                    "authorizingPrescription" => [
+                        [
+                            "reference" => "MedicationRequest/".$result2['id']
+                        ]
+                    ],
+                    "quantity" => [
+                        "system" => "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm",
+                        "code" => "TAB",
+                        "value" => $obat['jumlah'] ?? 1
+                    ],
+                    "dosageInstruction" => [
+                        [
+                            "sequence" => 1,
+                            "timing" => [
+                                "repeat" => [
+                                    "frequency" => 1,
+                                    "period" => 1,
+                                    "periodUnit" => "d"
+                                ]
+                            ],
+                            "route" => [
+                                "coding" => [
+                                    [
+                                        "code" => "O",
+                                        "display" => "Oral",
+                                        "system" => "http://www.whocc.no/atc"
+                                    ]
+                                ]
+                            ],
+                            "doseAndRate" => [
+                                [
+                                    "type" => [
+                                        "coding" => [
+                                            [
+                                                "system" => "http://terminology.hl7.org/CodeSystem/dose-rate-type",
+                                                "code" => "ordered",
+                                                "display" => "Ordered"
+                                            ]
+                                        ]
+                                    ],
+                                    "doseQuantity" => [
+                                        "value" => 1,
+                                        "unit" => "TAB",
+                                        "system" => "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm",
+                                        "code" => "TAB"
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+	                  ]; 
+
+            $result3 = $this->api->kirim_data($payload_dispense, 'MedicationDispense', $user_act, $kunjungan_id);
+            if (isset($result3['id'])) {
+                $this->m_main->save_medicationreqdis(
+                    $result3['id'],
+                    $result['id'],
+                    $kunjungan_id,
+                    $pelayanan_id,
+                    $encounter_id,
+                    $idResep,
+                    $idObat,
+                    'MEDICATION DISPENSE'
+                );
+            } else {
+                return $this->respond([
+                    'kode'  => 400,
+                    'pesan' => $result3['body']['issue'][0]['details']['text'] ?? 'MedicationDispense gagal terkirim'
+                ], 404);
+            }
+
+
+            endforeach;
+
+            return $this->respond([
+                'kode'  => 200,
+                'pesan' => 'Data Medication, MedicationRequest, dan MedicationDispense Berhasil Terkirim'
+            ], 200);
+            
         }
 
         $result = $this->api->kirim_data($payload, 'Medication', $user_act, $kunjungan_id);

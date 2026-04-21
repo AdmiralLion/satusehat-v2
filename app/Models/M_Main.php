@@ -56,6 +56,22 @@ class M_Main extends Model
                     ->getRowArray();
     }
 
+    public function get_encounter($kunjungan_id)
+    {
+        return $this->db1->table('encounter')
+                    ->where('kunjungan_id', $kunjungan_id)
+                    ->get()
+                    ->getRowArray();
+    }
+
+    public function get_unit_apotek($pelayanan_id)
+    {
+        return $this->db2->query(
+            "SELECT mu.* FROM b_resep br JOIN b_ms_unit mu ON br.kode_unit = mu.id WHERE br.pelayanan_id = ?",
+            [$pelayanan_id]
+        )->getRowArray();
+    }
+
     public function save_token($token, $expires_at)
     {
         return $this->db1->table('token_satset')->insert([
@@ -125,7 +141,7 @@ class M_Main extends Model
         ]);
     }
 
-    public function save_medaction($satusehat_id, $kunjungan_id, $pelayanan_id, $encounter_id, $id_resep, $id_obat)
+    public function save_medication($satusehat_id, $kunjungan_id, $pelayanan_id, $encounter_id, $id_resep, $id_obat)
     {
         return $this->db1->table('medication')->insert([
             'medication_id'   => $satusehat_id,
@@ -138,9 +154,10 @@ class M_Main extends Model
         ]);
     }
 
-    public function save_medactionreqdis($satusehat_id,$medication_id, $kunjungan_id, $pelayanan_id, $encounter_id, $id_resep, $id_obat)
+
+    public function save_medicationreqdis($satusehat_id, $medication_id, $kunjungan_id, $pelayanan_id, $encounter_id, $id_resep, $id_obat, $jenis_med)
     {
-        return $this->db1->table('medication')->insert([
+        return $this->db1->table('medication_reqdis')->insert([
             'medicationreqdis_id'   => $satusehat_id,
             'medication_id'   => $medication_id,
             'kunjungan_id'   => $kunjungan_id,
@@ -148,6 +165,7 @@ class M_Main extends Model
             'encounter_id'   => $encounter_id,
             'id_resep'    => $id_resep,
             'id_obat'  => $id_obat,
+            'jenis_med'  => $jenis_med,
             'tgl_create'     => date('Y-m-d H:i:s'),
         ]);
     }
@@ -250,12 +268,12 @@ class M_Main extends Model
         )->getResult();
     }
 
-    public function get_resep($kunjungan_id)
+    public function get_resep($pelayanan_id)
     {
         // echo $pelayanan_id;die();
         return $this->db2->query(
-            "SELECT r.*, o.KODE_KFA93, o.NAMA_OBAT_KFA93 FROM klinik_bersama.resep r JOIN klinik_bersama.ms_obat o ON r.obat_id = o.OBAT_ID WHERE r.kunjungan_id ? AND o.KODE_KFA93 IS NOT NULL",
-            [$kunjungan_id]
+            "SELECT br.*,r.id as obat_id,o.KODE_KFA93, o.NAMA_OBAT_KFA93 FROM b_resep br JOIN resep r ON br.id = r.header_resep_id JOIN ms_obat o ON r.obat_id = o.OBAT_ID WHERE br.pelayanan_id = ? AND o.KODE_KFA93 IS NOT NULL;",
+            [$pelayanan_id]
         )->getResult();
     }
 
