@@ -192,6 +192,136 @@ class SatuSehat extends Controller
         }
     }
 
+
+    public function send_composition(?object $row = null, ?string $org_id = null){
+        $input = $this->request->getJSON(true);
+        $payload       = $input['payload'] ?? [];
+        $kunjungan_id  = $input['kunjungan_id'] ?? null;
+        $pelayanan_id  = $input['pelayanan_id'] ?? null;
+        $user_act      = $input['user_act'] ?? null;
+        $encounter_id  = $input['encounter_id'] ?? null;
+        if($input == null){
+            echo 'test';die();
+            $data_comp = $this->m_main->get_composition($row->pelayanan_id);
+            $ihsPatient = $this->resolveIhsByNik($row->nik_px, 'Patient');
+            $ihsDoctor  = $this->resolveIhsByNik($row->user_act_1, 'Practitioner');
+            $data_pas = $this->m_main->get_pasien($data_comp['pasien_id']);
+            $data_dok = $this->m_main->get_dokter($data_comp['user_act_1']);
+
+            $tglkunj = date('d-m-Y', strtotime($data_comp['tgl_user_act_1']));
+            $hari = hariIndo(date('l', strtotime($tglkunj)));
+            $tglgizi = convertTimeSatset($data_comp['tgl_user_act_1'] ?? null);
+            $enc_detail = $this->m_main->get_encounter($row->kunjungan_id);
+            $encounter_id = $enc_detail['encounter_id'];
+
+            // $ihsDoctor = '10009880728'; //ihs_staging
+            // $ihsPatient = 'P02478375538'; //ihs_staging
+            $payload =[
+                "resourceType"=> "Composition",
+                "identifier"=> [
+                    "system"=> "http://sys-ids.kemkes.go.id/composition/{{$org_id}}",
+                    "value"=> "'.$row->pelayanan_id.'"
+                ],
+                "status"=> "final",
+                "type"=> [
+                    "coding"=> [
+                        [
+                            "system"=> "http://loinc.org",
+                            "code"=> "18842-5",
+                            "display"=> "Discharge summary"
+                        ]
+                    ]
+                ],
+                "category"=> [
+                    [
+                    "coding"=> [
+                            [
+                                "system"=> "http://loinc.org",
+                                "code"=> "LP173421-1",
+                                "display"=> "Report"
+                            ]
+                        ]
+                    ]
+                ],
+                "subject"=> [
+                    "reference"=> "Patient/'.$ihsPatient.'",
+                    "display"=> "{{$data_pas['nama']}}"
+                ],
+                "encounter"=> [
+                    "reference"=> "Encounter/'.$encounter_id.'",
+                    "display"=> "Kunjungan '.{{$data_pas['nama']}}.' di hari '.$hari.' , ' .$tglkunj.'"
+                ],
+                "date"=> "'.$tglgizi.'",
+                "author"=> [
+                    [
+                    "reference"=> "Practitioner/'.$ihsDoctor.'",
+                    "display"=> "{{$data_dok['nama']}}"
+                    ]
+                ],
+                "title"=> "Resume Medis Rawat Jalan",
+                "custodian"=> [
+                    "reference"=> "Organization/{{$org_id}}"
+                ],
+                "section"=> [
+                    [
+                    "code"=> [
+                        "coding"=> [
+                            [
+                                "system"=> "http://loinc.org",
+                                "code"=> "42344-2",
+                                "display"=> "Discharge diet (narrative)"
+                            ]
+                        ]
+                    ],
+                    "text"=> [
+                    "status"=> "additional",
+                    "div"=> "Rekomendasi diet rendah lemak, rendah kalori"
+                    ]
+                    ]
+                ]
+            ];
+            $result = $this->api->kirim_data($payload, 'Composition', $user_act, $kunjungan_id);
+            if(isset($result['id'])){
+                $this->m_main->save_composition(
+                    $result['id'],
+                    $encounter_id,
+                    $kunjungan_id,
+                    $pelayanan_id,
+                    date('Y-m-d H:i:s')
+                );
+                return $this->respond([
+                    'kode'  => 200,
+                    'pesan' => 'Data Berhasil Terkirim'
+                ], 200);
+            } else {
+                return $this->respond([
+                    'kode'  => 400,
+                    'pesan' => $result['body']['issue'][0]['details']['text']
+                ], 404);
+            }
+        }
+        $result = $this->api->kirim_data($payload, 'Composition', $user_act, $kunjungan_id);
+        // dd($result);
+        if(isset($result['id'])){
+            $this->m_main->save_composition(
+                $result['id'],
+                $encounter_id,
+                $user_act,
+                $kunjungan_id,
+                $pelayanan_id,
+            );
+            return $this->respond([
+                'kode'  => 200,
+                'pesan' => 'Data Berhasil Terkirim'
+            ], 200);
+        } else {
+            return $this->respond([
+                'kode'  => 400,
+                'pesan' => $result['body']['issue'][0]['details']['text']
+            ], 404);
+        }
+    }
+
     public function send_medication(?object $row = null, ?string $org_id = null){
         $input = $this->request->getJSON(true) ?? null;
         $payload       = $input['payload'] ?? [];
@@ -202,13 +332,18 @@ class SatuSehat extends Controller
         $id_resep   = $input['id_resep'] ?? null;
         $id_obat = $input['id_obat'] ?? null;
 
+        if ($input !== null) {
+            // dd($input);
+            return $this->sendMedicationFromFrontend($input);
+        }
+
         if($input == null){
             // $pending = $this->m_main->get_pending_kunjungan();
-            // $ihsPatient = $this->resolveIhsByNik($row->nik_px, 'Patient');
-            // $ihsDoctor  = $this->resolveIhsByNik($row->nik_dokter, 'Practitioner');
+            $ihsPatient = $this->resolveIhsByNik($row->nik_px, 'Patient');
+            $ihsDoctor  = $this->resolveIhsByNik($row->nik_dokter, 'Practitioner');
 
-            $ihsDoctor = '10009880728'; //ihs_staging
-            $ihsPatient = 'P02478375538'; //ihs_staging
+            // $ihsDoctor = '10009880728'; //ihs_staging
+            // $ihsPatient = 'P02478375538'; //ihs_staging
             // 2. Get detailed data from SIMRS
             $obat_detail    = $this->m_main->get_resep($row->pelayanan_id);
             $enc_detail = $this->m_main->get_encounter($row->kunjungan_id);
@@ -522,6 +657,189 @@ class SatuSehat extends Controller
                 'pesan' => $result['body']['issue'][0]['details']['text']
             ], 404);
         }
+    }
+
+    protected function sendMedicationFromFrontend(array $input): ResponseInterface
+    {
+        $items = $this->normalizeMedicationFrontendItems($input);
+        
+        if (empty($items)) {
+            return $this->respond([
+                'kode' => 400,
+                'pesan' => 'Payload medication dari frontend kosong atau formatnya tidak sesuai',
+            ], 400);
+        }
+
+        $results = [];
+
+        foreach ($items as $index => $item) {
+            $kunjungan_id = $item['kunjungan_id'] ?? $input['kunjungan_id'] ?? null;
+            $pelayanan_id = $item['pelayanan_id'] ?? $input['pelayanan_id'] ?? null;
+            $encounter_id = $item['encounter_id'] ?? $input['encounter_id'] ?? null;
+            $user_act = $item['user_act'] ?? $input['user_act'] ?? null;
+            $idResep = $item['id_resep'] ?? $input['id_resep'] ?? null;
+            $idObat = $item['id_obat'] ?? $input['id_obat'] ?? null;
+
+            $payloadMedication = $item['payload_medication'] ?? $item['payload'] ?? null;
+            $payloadRequest = $item['payload_medication_request']
+                ?? $item['payload_medicationrequest']
+                ?? $item['payload_request']
+                ?? null;
+            $payloadDispense = $item['payload_dispense']
+                ?? $item['payload_medication_dispense']
+                ?? $item['payload_medicationdispense']
+                ?? null;
+
+            if (empty($payloadMedication) || empty($payloadRequest) || empty($payloadDispense)) {
+                return $this->respond([
+                    'kode' => 400,
+                    'pesan' => 'Setiap item wajib berisi payload_medication, payload_medication_request, dan payload_dispense',
+                    'index' => $index,
+                ], 400);
+            }
+
+            $medicationResult = $this->api->kirim_data($payloadMedication, 'Medication', $user_act, $kunjungan_id);
+            if (!isset($medicationResult['id'])) {
+                return $this->respond([
+                    'kode' => 400,
+                    'pesan' => $medicationResult['body']['issue'][0]['details']['text'] ?? 'Medication gagal terkirim',
+                    'index' => $index,
+                    'result' => $medicationResult,
+                ], 404);
+            }
+
+            $this->m_main->save_medication(
+                $medicationResult['id'],
+                $kunjungan_id,
+                $pelayanan_id,
+                $encounter_id,
+                $idResep,
+                $idObat
+            );
+
+            $this->setMedicationReference($payloadRequest, $medicationResult['id']);
+            $requestResult = $this->api->kirim_data($payloadRequest, 'MedicationRequest', $user_act, $kunjungan_id);
+            if (!isset($requestResult['id'])) {
+                return $this->respond([
+                    'kode' => 400,
+                    'pesan' => $requestResult['body']['issue'][0]['details']['text'] ?? 'MedicationRequest gagal terkirim',
+                    'index' => $index,
+                    'result' => $requestResult,
+                ], 404);
+            }
+
+            $this->m_main->save_medicationreqdis(
+                $requestResult['id'],
+                $medicationResult['id'],
+                $kunjungan_id,
+                $pelayanan_id,
+                $encounter_id,
+                $idResep,
+                $idObat,
+                'MEDICATION REQUEST'
+            );
+
+            $this->setMedicationReference($payloadDispense, $medicationResult['id']);
+            $this->setMedicationRequestReference($payloadDispense, $requestResult['id']);
+            $dispenseResult = $this->api->kirim_data($payloadDispense, 'MedicationDispense', $user_act, $kunjungan_id);
+            if (!isset($dispenseResult['id'])) {
+                return $this->respond([
+                    'kode' => 400,
+                    'pesan' => $dispenseResult['body']['issue'][0]['details']['text'] ?? 'MedicationDispense gagal terkirim',
+                    'index' => $index,
+                    'result' => $dispenseResult,
+                ], 404);
+            }
+
+            $this->m_main->save_medicationreqdis(
+                $dispenseResult['id'],
+                $medicationResult['id'],
+                $kunjungan_id,
+                $pelayanan_id,
+                $encounter_id,
+                $idResep,
+                $idObat,
+                'MEDICATION DISPENSE'
+            );
+
+            $results[] = [
+                'index' => $index,
+                'medication_id' => $medicationResult['id'],
+                'medication_request_id' => $requestResult['id'],
+                'medication_dispense_id' => $dispenseResult['id'],
+            ];
+        }
+
+        return $this->respond([
+            'kode' => 200,
+            'pesan' => 'Data Medication, MedicationRequest, dan MedicationDispense dari frontend berhasil terkirim',
+            'total' => count($results),
+            'results' => $results,
+        ], 200);
+    }
+
+    protected function normalizeMedicationFrontendItems(array $input): array
+    {
+        if (isset($input['items']) && is_array($input['items'])) {
+            return $input['items'];
+        }
+
+        if (array_is_list($input)) {
+            return $input;
+        }
+
+        if (isset($input['payload_medication']) && is_array($input['payload_medication']) && array_is_list($input['payload_medication'])) {
+            $items = [];
+            foreach ($input['payload_medication'] as $index => $payloadMedication) {
+                $items[] = [
+                    'payload_medication' => $payloadMedication,
+                    'payload_medication_request' => $input['payload_medication_request'][$index] ?? $input['payload_request'][$index] ?? null,
+                    'payload_dispense' => $input['payload_dispense'][$index] ?? null,
+                    'kunjungan_id' => $this->frontendValue($input, 'kunjungan_id', $index),
+                    'pelayanan_id' => $this->frontendValue($input, 'pelayanan_id', $index),
+                    'encounter_id' => $this->frontendValue($input, 'encounter_id', $index),
+                    'id_resep' => $this->frontendValue($input, 'id_resep', $index),
+                    'id_obat' => $this->frontendValue($input, 'id_obat', $index),
+                    'user_act' => $this->frontendValue($input, 'user_act', $index),
+                ];
+            }
+            return $items;
+        }
+
+        return [$input];
+    }
+
+    protected function frontendValue(array $input, string $key, int $index)
+    {
+        if (!array_key_exists($key, $input)) {
+            return null;
+        }
+
+        if (is_array($input[$key]) && array_is_list($input[$key])) {
+            return $input[$key][$index] ?? null;
+        }
+
+        return $input[$key];
+    }
+
+    protected function setMedicationReference(array &$payload, string $medicationId): void
+    {
+        if (isset($payload['medicationReference']) && is_array($payload['medicationReference'])) {
+            $payload['medicationReference']['reference'] = "Medication/{$medicationId}";
+        }
+    }
+
+    protected function setMedicationRequestReference(array &$payload, string $medicationRequestId): void
+    {
+        if (!isset($payload['authorizingPrescription']) || !is_array($payload['authorizingPrescription'])) {
+            $payload['authorizingPrescription'] = [[]];
+        }
+
+        if (empty($payload['authorizingPrescription'])) {
+            $payload['authorizingPrescription'][] = [];
+        }
+
+        $payload['authorizingPrescription'][0]['reference'] = "MedicationRequest/{$medicationRequestId}";
     }
 
 

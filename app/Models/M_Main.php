@@ -170,6 +170,18 @@ class M_Main extends Model
         ]);
     }
 
+    public function save_composition($satusehat_id,$encounter_id, $user_act, $kunjungan_id, $pelayanan_id)
+    {
+        return $this->db1->table('composition')->insert([
+            'composition_id' => $satusehat_id,
+            'encounter_id' => $encounter_id,
+            'user_act'     => $user_act,
+            'kunjungan_id' => $kunjungan_id,
+            'pelayanan_id' => $pelayanan_id,
+            'tgl_create'   => date('Y-m-d H:i:s'),
+        ]);
+    }
+
     public function save_download($kunjungan_id, $pelayanan_id, $user_act, $nama_dokter, $nik_dokter, $nama_px, $nik_px, $no_rm, $nama_unit, $ihs_unitid, $tgl_1, $tgl_2, $tgl_3, $diagnosa, $nadi, $nafas, $sistole, $diastole, $suhu, $tindakan)
     {
         return $this->db1->table('get_kunjungan')->insert([
@@ -273,6 +285,14 @@ class M_Main extends Model
         // echo $pelayanan_id;die();
         return $this->db2->query(
             "SELECT br.*,r.id as obat_id,o.KODE_KFA93, o.NAMA_OBAT_KFA93 FROM b_resep br JOIN resep r ON br.id = r.header_resep_id JOIN ms_obat o ON r.obat_id = o.OBAT_ID WHERE br.pelayanan_id = ? AND o.KODE_KFA93 IS NOT NULL;",
+            [$pelayanan_id]
+        )->getResult();
+    }
+
+    public function get_composition($pelayanan_id)
+    {
+        return $this->db2->query(
+            "SELECT brj.pasien_id,brj.kunjungan_id,CASE WHEN 'Ya' IN (brj.skrining_gizi_p1,brj.skrining_gizi_p2,brj.skrining_gizi_p3) THEN 'True' ELSE 'False' END AS gizi ,brj.tgl_user_act_1,brj.user_act_1 FROM assesmen_rj brj WHERE brj.pelayanan_id ?"
             [$pelayanan_id]
         )->getResult();
     }
